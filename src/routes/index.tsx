@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { ReactFlow, Background, Controls, MiniMap, Node, Edge, useNodesState, useEdgesState } from '@xyflow/react'
+import { ReactFlow, Background, Controls, MiniMap, Node, Edge, useNodesState, useEdgesState, addEdge, Connection } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Plus } from 'lucide-react'
@@ -52,6 +52,13 @@ function App() {
     setIsMenuOpen(false)
   }, [setNodes])
 
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      setEdges((eds) => addEdge(connection, eds))
+    },
+    [setEdges]
+  )
+
   // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -76,6 +83,7 @@ function App() {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
         nodeTypes={nodeTypes}
         fitView
       >

@@ -142,9 +142,11 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const [copiedCodeBlock, setCopiedCodeBlock] = useState<string | null>(null)
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
+  const [connectedContexts, setConnectedContexts] = useState<Map<string, string>>(new Map())
+  const [isContextExpanded, setIsContextExpanded] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const { setNodes } = useReactFlow()
+  const { setNodes, getEdges, getNode } = useReactFlow()
 
   const handleClose = () => {
     setNodes((nodes) => nodes.filter((node) => node.id !== id))
@@ -278,6 +280,85 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Monitor context node connections
+  useEffect(() => {
+    const edges = getEdges()
+    const contextEdges = edges.filter(
+      (edge) => edge.target === id && edge.source.startsWith('node-')
+    )
+
+    const newContexts = new Map<string, string>()
+
+    contextEdges.forEach((edge) => {
+      const sourceNode = getNode(edge.source)
+      if (sourceNode && sourceNode.type === 'contextNode') {
+        const contextText = (sourceNode.data as any).text || ''
+        newContexts.set(edge.source, contextText)
+      }
+    })
+
+    // Detect changes and inject context messages
+    const oldContextIds = new Set(connectedContexts.keys())
+    const newContextIds = new Set(newContexts.keys())
+
+    // New contexts added
+    newContextIds.forEach((contextId) => {
+      if (!oldContextIds.has(contextId)) {
+        const contextText = newContexts.get(contextId) || ''
+        const sourceNode = getNode(contextId)
+        const contextLabel = (sourceNode?.data as any)?.label || 'Context'
+
+        // Inject context added message
+        const contextMessage: Message = {
+          id: `context-${contextId}-${Date.now()}`,
+          role: 'assistant',
+          content: `📎 **Context Added: ${contextLabel}**\n\n${contextText}`,
+        }
+        setMessages((prev) => [...prev, contextMessage])
+      }
+    })
+
+    // Contexts removed
+    oldContextIds.forEach((contextId) => {
+      if (!newContextIds.has(contextId)) {
+        const sourceNode = getNode(contextId)
+        const contextLabel = (sourceNode?.data as any)?.label || 'Context'
+        const oldContextText = connectedContexts.get(contextId) || ''
+
+        // Inject context removed message with full context text
+        const removalMessage: Message = {
+          id: `context-removed-${contextId}-${Date.now()}`,
+          role: 'assistant',
+          content: `📎 **Context Removed: ${contextLabel}**\n\nThe following context has been removed and should no longer be considered in future responses:\n\n---\n\n${oldContextText}\n\n---\n\n*Please disregard this information going forward.*`,
+        }
+        setMessages((prev) => [...prev, removalMessage])
+      }
+    })
+
+    // Contexts updated (text changed)
+    newContextIds.forEach((contextId) => {
+      if (oldContextIds.has(contextId)) {
+        const oldText = connectedContexts.get(contextId) || ''
+        const newText = newContexts.get(contextId) || ''
+
+        if (oldText !== newText && newText) {
+          const sourceNode = getNode(contextId)
+          const contextLabel = (sourceNode?.data as any)?.label || 'Context'
+
+          // Inject context updated message
+          const updateMessage: Message = {
+            id: `context-updated-${contextId}-${Date.now()}`,
+            role: 'assistant',
+            content: `📎 **Context Updated: ${contextLabel}**\n\n${newText}`,
+          }
+          setMessages((prev) => [...prev, updateMessage])
+        }
+      }
+    })
+
+    setConnectedContexts(newContexts)
+  }, [getEdges, getNode, id, connectedContexts])
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
@@ -477,6 +558,50 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
         )}
       </div>
 
+      {/* Active Contexts Indicator */}
+      {connectedContexts.size > 0 && (
+        <div className="nodrag bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200">
+          <button
+            onClick={() => setIsContextExpanded(!isContextExpanded)}
+            className="w-full px-4 py-2 flex items-center justify-between hover:bg-amber-100/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-sm">📎</span>
+              <span className="text-xs font-medium text-amber-700">
+                Active Context ({connectedContexts.size})
+              </span>
+            </div>
+            {isContextExpanded ? (
+              <ChevronUp size={16} className="text-amber-600" />
+            ) : (
+              <ChevronDown size={16} className="text-amber-600" />
+            )}
+          </button>
+
+          {isContextExpanded && (
+            <div className="px-4 pb-3 pt-1 space-y-2 animate-in slide-in-from-top-2 duration-200">
+              {Array.from(connectedContexts.entries()).map(([contextId, contextText]) => {
+                const sourceNode = getNode(contextId)
+                const contextLabel = (sourceNode?.data as any)?.label || 'Context'
+                return (
+                  <div
+                    key={contextId}
+                    className="bg-white rounded-lg p-2 border border-amber-200"
+                  >
+                    <p className="text-xs font-medium text-gray-700 mb-1">
+                      {contextLabel}
+                    </p>
+                    <p className="text-xs text-gray-500 line-clamp-2">
+                      {contextText || 'No content'}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-800">
@@ -524,7 +649,9 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
           </div>
         ) : (
           <div className="space-y-4">
-            {messages.map((message) => (
+            {messages.map((message) => {
+              const isContextMessage = message.content.startsWith('📎')
+              return (
               <div
                 key={message.id}
                 className={`flex ${
@@ -535,6 +662,8 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
                   className={`group rounded-2xl px-4 py-3 shadow-sm max-w-[80%] relative ${
                     message.role === 'user'
                       ? 'bg-blue-600 text-white rounded-tr-sm'
+                      : isContextMessage
+                      ? 'bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-tl-sm'
                       : 'bg-white rounded-tl-sm'
                   }`}
                 >
@@ -640,7 +769,8 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
                   )}
                 </div>
               </div>
-            ))}
+              )
+            })}
             <div ref={messagesEndRef} />
           </div>
         )}

@@ -18,6 +18,18 @@ export default function ContextNode({ id, data }: ContextNodeProps) {
     setNodes((nodes) => nodes.filter((node) => node.id !== id))
   }
 
+  const handleTextChange = (newText: string) => {
+    setText(newText)
+    // Update the node data so other nodes can access the text
+    setNodes((nodes) =>
+      nodes.map((node) =>
+        node.id === id
+          ? { ...node, data: { ...node.data, text: newText } }
+          : node
+      )
+    )
+  }
+
   return (
     <div className="bg-white rounded-xl shadow-lg border border-gray-200 w-[400px]">
       <Handle type="target" position={Position.Top} className="w-3 h-3" />
@@ -41,7 +53,7 @@ export default function ContextNode({ id, data }: ContextNodeProps) {
       <div className="nodrag p-4">
         <textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => handleTextChange(e.target.value)}
           placeholder="Enter context information..."
           className="nodrag w-full h-[200px] resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent placeholder:text-gray-400"
         />
