@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { Handle, Position, useReactFlow, NodeResizer } from '@xyflow/react'
-import { ArrowUp, X, Settings, ChevronDown, ChevronUp, Undo2, Redo2, Pencil, Check } from 'lucide-react'
+import { ArrowUp, X, Settings, ChevronDown, ChevronUp, Undo2, Redo2, Pencil, Check, Copy, Check as CheckCopy, Reply, Download, MoreHorizontal } from 'lucide-react'
 import { sendChatMessage } from '../functions/chat'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
 interface ChatNodeProps {
   id: string
@@ -17,12 +21,112 @@ interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
+  replyTo?: {
+    id: string
+    content: string
+    role: 'user' | 'assistant'
+  }
 }
 
 const MODEL_MAP = {
   ChatGPT: 'openai/gpt-5.2-chat',  // Latest GPT-4o model
   Claude: 'anthropic/claude-haiku-4.5',  // Latest Claude 3.5 Sonnet
   Gemini: 'google/gemini-3-flash-preview',  // Latest Gemini 2.0 Flash
+}
+
+interface CodeBlockProps {
+  inline?: boolean
+  className?: string
+  children?: React.ReactNode
+  copiedCodeBlock: string | null
+  setCopiedCodeBlock: (id: string | null) => void
+}
+
+function CodeBlock({ inline, className, children, copiedCodeBlock, setCopiedCodeBlock, ...props }: CodeBlockProps) {
+  const match = /language-(\w+)/.exec(className || '')
+  const language = match ? match[1] : ''
+  const codeString = String(children).replace(/\n$/, '')
+  const codeId = `${language}-${codeString.substring(0, 20)}`
+
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(codeString)
+      setCopiedCodeBlock(codeId)
+      setTimeout(() => setCopiedCodeBlock(null), 2000)
+    } catch (error) {
+      console.error('Failed to copy code:', error)
+    }
+  }
+
+  const handleDownloadCode = () => {
+    const blob = new Blob([codeString], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `code.${language || 'txt'}`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  if (!inline && language) {
+    return (
+      <div className="nodrag my-4 rounded-lg overflow-hidden bg-[#1e1e1e] border border-gray-700">
+        {/* Header with language and buttons */}
+        <div className="flex items-center justify-between px-4 py-2 bg-[#2d2d30] border-b border-gray-700">
+          <span className="text-xs font-mono text-gray-300">{language}</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadCode}
+              className="p-1 text-gray-400 hover:text-gray-200 transition-colors"
+              aria-label="Download code"
+            >
+              <Download size={14} />
+            </button>
+            <button
+              className="p-1 text-gray-400 hover:text-gray-200 transition-colors"
+              aria-label="More options"
+            >
+              <MoreHorizontal size={14} />
+            </button>
+            <button
+              onClick={handleCopyCode}
+              className="p-1 text-gray-400 hover:text-gray-200 transition-colors"
+              aria-label="Copy code"
+            >
+              {copiedCodeBlock === codeId ? (
+                <CheckCopy size={14} />
+              ) : (
+                <Copy size={14} />
+              )}
+            </button>
+          </div>
+        </div>
+        {/* Code content with syntax highlighting */}
+        <SyntaxHighlighter
+          style={vscDarkPlus}
+          language={language}
+          PreTag="div"
+          customStyle={{
+            margin: 0,
+            padding: '1rem',
+            background: '#1e1e1e',
+            fontSize: '0.875rem',
+          }}
+          {...props}
+        >
+          {codeString}
+        </SyntaxHighlighter>
+      </div>
+    )
+  }
+
+  return (
+    <code className="bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-sm font-mono" {...props}>
+      {children}
+    </code>
+  )
 }
 
 export default function ChatNode({ id, data, selected }: ChatNodeProps) {
@@ -35,6 +139,9 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
   const [isSettingsExpanded, setIsSettingsExpanded] = useState(false)
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [editingContent, setEditingContent] = useState('')
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [copiedCodeBlock, setCopiedCodeBlock] = useState<string | null>(null)
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const { setNodes } = useReactFlow()
@@ -65,6 +172,24 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
   const handleCancelEdit = () => {
     setEditingMessageId(null)
     setEditingContent('')
+  }
+
+  const handleCopyMessage = async (messageId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopiedMessageId(messageId)
+      setTimeout(() => setCopiedMessageId(null), 2000) // Reset after 2 seconds
+    } catch (error) {
+      console.error('Failed to copy text:', error)
+    }
+  }
+
+  const handleReplyTo = (message: Message) => {
+    setReplyingTo(message)
+  }
+
+  const handleCancelReply = () => {
+    setReplyingTo(null)
   }
 
   const handleSaveEdit = async () => {
@@ -161,10 +286,16 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
       id: Date.now().toString(),
       role: 'user',
       content: input.trim(),
+      replyTo: replyingTo ? {
+        id: replyingTo.id,
+        content: replyingTo.content,
+        role: replyingTo.role,
+      } : undefined,
     }
 
     setMessages((prev) => [...prev, userMessage])
     setDeletedMessages([]) // Clear redo history when new message is sent
+    setReplyingTo(null) // Clear reply reference
     setInput('')
     setIsLoading(true)
 
@@ -442,22 +573,69 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
                     </div>
                   ) : (
                     <>
-                      <p
-                        className={`text-sm leading-relaxed whitespace-pre-wrap ${
-                          message.role === 'user' ? 'text-white' : 'text-gray-700'
-                        }`}
-                      >
-                        {message.content}
-                      </p>
-                      {message.role === 'user' && (
+                      <div>
+                        {message.replyTo && (
+                          <div className="mb-2 pl-3 border-l-2 border-gray-400 opacity-70">
+                            <p className="text-xs font-medium mb-1">
+                              {message.replyTo.role === 'user' ? 'You' : 'AI'}
+                            </p>
+                            <p className="text-xs line-clamp-2">
+                              {message.replyTo.content}
+                            </p>
+                          </div>
+                        )}
+                        {message.role === 'user' ? (
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap text-white select-text">
+                            {message.content}
+                          </p>
+                        ) : (
+                          <div className="text-sm leading-relaxed text-gray-700 prose prose-sm max-w-none prose-headings:mt-6 prose-headings:mb-4 prose-p:my-4 prose-pre:my-4 prose-ul:my-3 prose-ol:my-3 prose-li:my-1 select-text">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                code: (props) => (
+                                  <CodeBlock
+                                    {...props}
+                                    copiedCodeBlock={copiedCodeBlock}
+                                    setCopiedCodeBlock={setCopiedCodeBlock}
+                                  />
+                                ),
+                              }}
+                            >
+                              {message.content}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                      </div>
+                      <div className="nodrag absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          onClick={() => handleEditMessage(message.id, message.content)}
-                          className="nodrag absolute -top-2 -right-2 p-1.5 bg-gray-700 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-800"
-                          aria-label="Edit message"
+                          onClick={() => handleReplyTo(message)}
+                          className="p-1.5 bg-gray-700 text-white rounded-full hover:bg-gray-800"
+                          aria-label="Reply to message"
                         >
-                          <Pencil size={12} />
+                          <Reply size={12} />
                         </button>
-                      )}
+                        <button
+                          onClick={() => handleCopyMessage(message.id, message.content)}
+                          className="p-1.5 bg-gray-700 text-white rounded-full hover:bg-gray-800"
+                          aria-label="Copy message"
+                        >
+                          {copiedMessageId === message.id ? (
+                            <CheckCopy size={12} />
+                          ) : (
+                            <Copy size={12} />
+                          )}
+                        </button>
+                        {message.role === 'user' && (
+                          <button
+                            onClick={() => handleEditMessage(message.id, message.content)}
+                            className="p-1.5 bg-gray-700 text-white rounded-full hover:bg-gray-800"
+                            aria-label="Edit message"
+                          >
+                            <Pencil size={12} />
+                          </button>
+                        )}
+                      </div>
                     </>
                   )}
                 </div>
@@ -470,6 +648,29 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
 
       {/* Input Area */}
       <div className="nodrag p-4 border-t border-gray-200 bg-white rounded-b-2xl">
+        {/* Reply Preview */}
+        {replyingTo && (
+          <div className="mb-3 p-2 bg-gray-50 rounded-lg border border-gray-200 flex items-start justify-between">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <Reply size={14} className="text-purple-600 flex-shrink-0" />
+                <p className="text-xs font-medium text-purple-600">
+                  Replying to {replyingTo.role === 'user' ? 'yourself' : 'AI'}
+                </p>
+              </div>
+              <p className="text-xs text-gray-600 line-clamp-2">
+                {replyingTo.content}
+              </p>
+            </div>
+            <button
+              onClick={handleCancelReply}
+              className="p-1 hover:bg-gray-200 rounded-md transition-colors ml-2 flex-shrink-0"
+              aria-label="Cancel reply"
+            >
+              <X size={14} className="text-gray-500" />
+            </button>
+          </div>
+        )}
         <form onSubmit={onSubmit}>
           <div className="relative flex items-end gap-2">
             <textarea
