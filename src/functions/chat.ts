@@ -6,10 +6,6 @@ import { ProviderPreferences } from '@openrouter/sdk/models'
 import { env } from "cloudflare:workers";
 
 
-const openRouter = new OpenRouter({
-  apiKey: env.OPENROUTER_API_KEY,
-})
-
 const messageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system']).default('user'),
   message: z.string(),
@@ -138,18 +134,60 @@ type Request = {
 
 export const sendChatMessage = createServerFn({ method: 'POST' })
   .inputValidator(messageSchema)
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const messagesToSend = data.messages || [{ role: data.role, content: data.message }]
 
     console.log(`[OpenRouter] Using model: ${data.model}`)
     console.log(`[OpenRouter] Message count: ${messagesToSend.length}`)
+    console.log(`[OpenRouter] Temperature: ${data.temperature || 0.7}`)
+    console.log('[OpenRouter] Messages being sent:', JSON.stringify(messagesToSend, null, 2))
 
-    const stream = await openRouter.chat.send({
+    // Get API key from Cloudflare env or fallback to process.env
+    const apiKey = env.OPENROUTER_API_KEY
+
+    if (!apiKey) {
+      console.error('[OpenRouter] OPENROUTER_API_KEY not found in env')
+      throw new Error('OPENROUTER_API_KEY is not configured')
+    }
+
+    console.log('[OpenRouter] API key found, initializing client...')
+    console.log('[OpenRouter] API key type:', typeof apiKey)
+    console.log('[OpenRouter] API key length:', apiKey?.length)
+    console.log('[OpenRouter] API key (first 10 chars):', apiKey?.substring(0, 10) + '...')
+    console.log('[OpenRouter] API key is truthy:', !!apiKey)
+
+    if (!apiKey || apiKey.trim() === '' || apiKey === 'your-new-api-key-here') {
+      throw new Error('Invalid API key - please set a valid OpenRouter API key in .dev.vars')
+    }
+
+    // Create OpenRouter client with the API key
+    const openRouter = new OpenRouter({
+      apiKey: apiKey.trim(),
+    })
+
+    console.log('[OpenRouter] Client initialized successfully')
+    console.log('[OpenRouter] Sending request to API...')
+    console.log('[OpenRouter] Request details:', {
       model: data.model,
-      messages: messagesToSend,
+      messageCount: messagesToSend.length,
       stream: true,
       temperature: data.temperature || 0.7,
     })
+
+    let stream
+    try {
+      stream = await openRouter.chat.send({
+        model: data.model,
+        messages: messagesToSend,
+        stream: true,
+        temperature: data.temperature || 0.7,
+      })
+      console.log('[OpenRouter] Stream connection established successfully')
+    } catch (error) {
+      console.error('[OpenRouter] Error sending request:', error)
+      console.error('[OpenRouter] Error details:', JSON.stringify(error, null, 2))
+      throw error
+    }
 
     // Create a ReadableStream that will be sent to the client
     const encoder = new TextEncoder()
@@ -157,19 +195,30 @@ export const sendChatMessage = createServerFn({ method: 'POST' })
     return new Response(
       new ReadableStream({
         async start(controller) {
+          let totalChunks = 0
+          let totalContent = ''
           try {
+            console.log('[OpenRouter] Starting to receive stream chunks...')
             for await (const chunk of stream) {
               const content = chunk.choices?.[0]?.delta?.content
               if (content) {
+                totalChunks++
+                totalContent += content
+                console.log(`[OpenRouter] Chunk ${totalChunks}: "${content}"`)
                 controller.enqueue(encoder.encode(content))
               }
             }
+            console.log('[OpenRouter] Stream complete!')
+            console.log(`[OpenRouter] Total chunks received: ${totalChunks}`)
+            console.log(`[OpenRouter] Total content length: ${totalContent.length} characters`)
+            console.log('[OpenRouter] Complete response:', totalContent)
             controller.close()
           } catch (error: any) {
             if (error.name === 'AbortError') {
-              console.log('Stream cancelled')
+              console.log('[OpenRouter] Stream cancelled by client')
               controller.close()
             } else {
+              console.error('[OpenRouter] Stream error:', error)
               controller.error(error)
             }
           }

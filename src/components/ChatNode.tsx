@@ -148,6 +148,7 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
   const [connectedContexts, setConnectedContexts] = useState<Map<string, string>>(new Map())
   const [isContextExpanded, setIsContextExpanded] = useState(false)
   const [isExpandOpen, setIsExpandOpen] = useState(false)
+  const connectedContextsRef = useRef<Map<string, string>>(new Map())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const { setNodes, getEdges, getNode } = useReactFlow()
@@ -308,7 +309,7 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
     })
 
     // Detect changes and inject context messages
-    const oldContextIds = new Set(connectedContexts.keys())
+    const oldContextIds = new Set(connectedContextsRef.current.keys())
     const newContextIds = new Set(newContexts.keys())
 
     // New contexts added
@@ -333,7 +334,7 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
       if (!newContextIds.has(contextId)) {
         const sourceNode = getNode(contextId)
         const contextLabel = (sourceNode?.data as any)?.label || 'Context'
-        const oldContextText = connectedContexts.get(contextId) || ''
+        const oldContextText = connectedContextsRef.current.get(contextId) || ''
 
         // Inject context removed message with full context text
         const removalMessage: Message = {
@@ -348,7 +349,7 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
     // Contexts updated (text changed)
     newContextIds.forEach((contextId) => {
       if (oldContextIds.has(contextId)) {
-        const oldText = connectedContexts.get(contextId) || ''
+        const oldText = connectedContextsRef.current.get(contextId) || ''
         const newText = newContexts.get(contextId) || ''
 
         if (oldText !== newText && newText) {
@@ -366,8 +367,10 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
       }
     })
 
+    // Update both state and ref
+    connectedContextsRef.current = newContexts
     setConnectedContexts(newContexts)
-  }, [getEdges, getNode, id, connectedContexts])
+  }, [getEdges, getNode, id])
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
