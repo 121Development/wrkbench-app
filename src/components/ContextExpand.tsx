@@ -116,30 +116,30 @@ export default function ContextExpand({
   const [copiedCodeBlock, setCopiedCodeBlock] = useState<string | null>(null)
 
   return (
-    <div className="nodrag fixed top-0 right-0 h-screen w-[700px] bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
+    <div className="nodrag fixed inset-0 md:top-0 md:right-0 md:left-auto md:w-[700px] h-screen bg-white shadow-2xl md:border-l border-gray-200 z-50 flex flex-col">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50">
-        <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-800 flex items-center gap-2 truncate mr-2">
           <span>📝</span>
           {contextLabel || 'Context'} - Expanded View
         </h3>
         <button
           onClick={onClose}
-          className="p-1 hover:bg-amber-100 rounded-md transition-colors"
+          className="p-1.5 sm:p-1 hover:bg-amber-100 rounded-md transition-colors flex-shrink-0"
           aria-label="Close expanded view"
         >
-          <X size={20} className="text-gray-500 hover:text-gray-700" />
+          <X size={24} className="sm:w-5 sm:h-5 text-gray-500 hover:text-gray-700" />
         </button>
       </div>
 
       {/* Content Area */}
-      <div className="nodrag nowheel flex-1 p-6 overflow-y-auto bg-gray-50" onWheel={(e) => e.stopPropagation()}>
+      <div className="nodrag nowheel flex-1 p-4 sm:p-6 overflow-y-auto bg-gray-50" onWheel={(e) => e.stopPropagation()}>
         {text.length === 0 ? (
           <div className="flex items-center justify-center h-full">
-            <p className="text-gray-400 text-base">No context entered yet...</p>
+            <p className="text-gray-400 text-sm sm:text-base">No context entered yet...</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl p-6 shadow-sm">
+          <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm">
             <div className="text-base leading-relaxed text-gray-700 prose prose-base max-w-none prose-headings:mt-6 prose-headings:mb-4 prose-p:my-4 prose-pre:my-4 prose-ul:my-3 prose-ol:my-3 prose-li:my-1 select-text">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}

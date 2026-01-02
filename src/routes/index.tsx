@@ -222,7 +222,10 @@ function App() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         nodeTypes={nodeTypes}
-        fitView
+        defaultViewport={{ x: 0, y: 0, zoom: 0.75 }}
+        fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
+        minZoom={0.1}
+        maxZoom={2}
       >
         <Background />
         <Controls />

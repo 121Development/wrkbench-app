@@ -139,18 +139,18 @@ export default function ChatExpand({
   }
 
   return (
-    <div className="nodrag fixed top-0 right-0 h-screen w-[700px] bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col">
+    <div className="nodrag fixed inset-0 md:top-0 md:right-0 md:left-auto md:w-[700px] h-screen bg-white shadow-2xl md:border-l border-gray-200 z-50 flex flex-col">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-purple-50 to-indigo-50">
-        <h3 className="text-lg font-semibold text-gray-800">
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-purple-50 to-indigo-50">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-800 truncate mr-2">
           {chatLabel || 'AI Chat'} - Expanded View
         </h3>
         <button
           onClick={onClose}
-          className="p-1 hover:bg-purple-100 rounded-md transition-colors"
+          className="p-1.5 sm:p-1 hover:bg-purple-100 rounded-md transition-colors flex-shrink-0"
           aria-label="Close expanded view"
         >
-          <X size={20} className="text-gray-500 hover:text-gray-700" />
+          <X size={24} className="sm:w-5 sm:h-5 text-gray-500 hover:text-gray-700" />
         </button>
       </div>
 
@@ -228,7 +228,7 @@ export default function ChatExpand({
       </div>
 
       {/* Messages */}
-      <div className="nodrag nowheel flex-1 p-6 overflow-y-auto bg-gray-50" onWheel={(e) => e.stopPropagation()}>
+      <div className="nodrag nowheel flex-1 p-4 sm:p-6 overflow-y-auto bg-gray-50" onWheel={(e) => e.stopPropagation()}>
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-400 text-base">Start a conversation...</p>
@@ -245,7 +245,7 @@ export default function ChatExpand({
                   }`}
                 >
                   <div
-                    className={`rounded-2xl px-5 py-4 shadow-sm max-w-[85%] ${
+                    className={`rounded-2xl px-3 sm:px-5 py-3 sm:py-4 shadow-sm max-w-[90%] sm:max-w-[85%] ${
                       message.role === 'user'
                         ? 'bg-blue-600 text-white rounded-tr-sm'
                         : isContextMessage
@@ -295,7 +295,7 @@ export default function ChatExpand({
       </div>
 
       {/* Input Area */}
-      <div className="nodrag p-6 border-t border-gray-200 bg-white">
+      <div className="nodrag p-4 sm:p-6 border-t border-gray-200 bg-white safe-area-inset-bottom">
         {replyingTo && (
           <div className="mb-3 p-2 bg-gray-50 rounded-lg border border-gray-200 flex items-start justify-between">
             <div className="flex-1 min-w-0">
@@ -326,7 +326,7 @@ export default function ChatExpand({
               onKeyDown={onKeyDown}
               placeholder="Message..."
               disabled={isLoading}
-              className="nodrag nowheel flex-1 resize-none rounded-xl border border-gray-300 px-4 py-3 pr-12 text-base focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent min-h-[52px] max-h-[200px] placeholder:text-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="nodrag nowheel flex-1 resize-none rounded-xl border border-gray-300 px-3 sm:px-4 py-2.5 sm:py-3 pr-12 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent min-h-[48px] sm:min-h-[52px] max-h-[200px] placeholder:text-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed"
               rows={1}
               onWheel={(e) => e.stopPropagation()}
             />
@@ -349,20 +349,20 @@ export default function ChatExpand({
           <button
             onClick={onUndo}
             disabled={messages.length === 0}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-2.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             aria-label="Undo"
             title="Undo last message"
           >
-            <Undo2 size={16} className="text-gray-600" />
+            <Undo2 size={18} className="sm:w-4 sm:h-4 text-gray-600" />
           </button>
           <button
             onClick={onRedo}
             disabled={deletedMessages.length === 0}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-2.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             aria-label="Redo"
             title="Redo message"
           >
-            <Redo2 size={16} className="text-gray-600" />
+            <Redo2 size={18} className="sm:w-4 sm:h-4 text-gray-600" />
           </button>
         </div>
       </div>
