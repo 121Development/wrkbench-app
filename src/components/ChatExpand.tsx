@@ -343,9 +343,6 @@ export default function ChatExpand({
             </button>
           </div>
         </form>
-        <p className="text-xs text-gray-400 mt-2 text-center">
-          Press Enter to send, Shift+Enter for new line
-        </p>
 
         {/* Action Buttons: Undo, Redo */}
         <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-200">

@@ -142,30 +142,6 @@ export default function ContextNode({ id, data }: ContextNodeProps) {
   return (
     <>
     <div className="bg-white rounded-xl shadow-lg border border-gray-200 w-[400px]">
-      <Handle
-        type="target"
-        position={Position.Top}
-        style={{
-          background: 'none',
-          border: 'none',
-          width: '1.5em',
-          height: '1.5em',
-        }}
-      >
-        <Circle
-          size={24}
-          fill="white"
-          stroke="#ea580c"
-          strokeWidth={2}
-          style={{
-            pointerEvents: 'none',
-            left: 0,
-            top: 0,
-            position: 'absolute',
-          }}
-        />
-      </Handle>
-
       {/* Header */}
       <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-amber-50 to-orange-50 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">

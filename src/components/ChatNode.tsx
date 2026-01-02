@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useContext } from 'react'
 import { createPortal } from 'react-dom'
-import { Handle, Position, useReactFlow, NodeResizer } from '@xyflow/react'
+import { Handle, Position, useReactFlow, NodeResizer, useEdges, useNodes } from '@xyflow/react'
 import { ArrowUp, X, Settings, ChevronDown, ChevronUp, Undo2, Redo2, Pencil, Check, Copy, Check as CheckCopy, Reply, Download, MoreHorizontal, Circle, Maximize2 } from 'lucide-react'
 import { sendChatMessage } from '../functions/chat'
 import ReactMarkdown from 'react-markdown'
@@ -151,7 +151,9 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
   const connectedContextsRef = useRef<Map<string, string>>(new Map())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const { setNodes, getEdges, getNode } = useReactFlow()
+  const { setNodes } = useReactFlow()
+  const edges = useEdges()
+  const nodes = useNodes()
   const { addLog } = useContext(LogContext)
 
   const handleClose = () => {
@@ -291,20 +293,43 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Monitor context node connections
+  // Sync messages to node data so other nodes can access them
   useEffect(() => {
-    const edges = getEdges()
-    const contextEdges = edges.filter(
+    setNodes((nodes) =>
+      nodes.map((node) =>
+        node.id === id
+          ? { ...node, data: { ...node.data, messages: messages } }
+          : node
+      )
+    )
+  }, [messages, id, setNodes])
+
+  // Monitor context and chat node connections
+  useEffect(() => {
+    const inputEdges = edges.filter(
       (edge) => edge.target === id && edge.source.startsWith('node-')
     )
 
     const newContexts = new Map<string, string>()
 
-    contextEdges.forEach((edge) => {
-      const sourceNode = getNode(edge.source)
-      if (sourceNode && sourceNode.type === 'contextNode') {
-        const contextText = (sourceNode.data as any).text || ''
-        newContexts.set(edge.source, contextText)
+    inputEdges.forEach((edge) => {
+      const sourceNode = nodes.find(node => node.id === edge.source)
+      if (sourceNode) {
+        if (sourceNode.type === 'contextNode') {
+          // Handle context nodes
+          const contextText = (sourceNode.data as any).text || ''
+          newContexts.set(edge.source, contextText)
+        } else if (sourceNode.type === 'chatNode') {
+          // Handle chat nodes - format messages as conversation history
+          const sourceMessages = (sourceNode.data as any).messages || []
+          const formattedConversation = sourceMessages
+            .map((msg: Message) => {
+              const role = msg.role === 'user' ? 'User' : 'Assistant'
+              return `**${role}:** ${msg.content}`
+            })
+            .join('\n\n')
+          newContexts.set(edge.source, formattedConversation)
+        }
       }
     })
 
@@ -316,14 +341,15 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
     newContextIds.forEach((contextId) => {
       if (!oldContextIds.has(contextId)) {
         const contextText = newContexts.get(contextId) || ''
-        const sourceNode = getNode(contextId)
-        const contextLabel = (sourceNode?.data as any)?.label || 'Context'
+        const sourceNode = nodes.find(node => node.id === contextId)
+        const nodeType = sourceNode?.type === 'chatNode' ? 'Chat' : 'Context'
+        const contextLabel = (sourceNode?.data as any)?.label || nodeType
 
         // Inject context added message
         const contextMessage: Message = {
           id: `context-${contextId}-${Date.now()}`,
           role: 'assistant',
-          content: `📎 **Context Added: ${contextLabel}**\n\n${contextText}`,
+          content: `📎 **${nodeType} Connected: ${contextLabel}**\n\n${contextText}`,
         }
         setMessages((prev) => [...prev, contextMessage])
       }
@@ -332,35 +358,37 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
     // Contexts removed
     oldContextIds.forEach((contextId) => {
       if (!newContextIds.has(contextId)) {
-        const sourceNode = getNode(contextId)
-        const contextLabel = (sourceNode?.data as any)?.label || 'Context'
+        const sourceNode = nodes.find(node => node.id === contextId)
+        const nodeType = sourceNode?.type === 'chatNode' ? 'Chat' : 'Context'
+        const contextLabel = (sourceNode?.data as any)?.label || nodeType
         const oldContextText = connectedContextsRef.current.get(contextId) || ''
 
         // Inject context removed message with full context text
         const removalMessage: Message = {
           id: `context-removed-${contextId}-${Date.now()}`,
           role: 'assistant',
-          content: `📎 **Context Removed: ${contextLabel}**\n\nThe following context has been removed and should no longer be considered in future responses:\n\n---\n\n${oldContextText}\n\n---\n\n*Please disregard this information going forward.*`,
+          content: `📎 **${nodeType} Disconnected: ${contextLabel}**\n\nThe following information has been removed and should no longer be considered in future responses:\n\n---\n\n${oldContextText}\n\n---\n\n*Please disregard this information going forward.*`,
         }
         setMessages((prev) => [...prev, removalMessage])
       }
     })
 
-    // Contexts updated (text changed)
+    // Contexts updated (text/messages changed)
     newContextIds.forEach((contextId) => {
       if (oldContextIds.has(contextId)) {
         const oldText = connectedContextsRef.current.get(contextId) || ''
         const newText = newContexts.get(contextId) || ''
 
         if (oldText !== newText && newText) {
-          const sourceNode = getNode(contextId)
-          const contextLabel = (sourceNode?.data as any)?.label || 'Context'
+          const sourceNode = nodes.find(node => node.id === contextId)
+          const nodeType = sourceNode?.type === 'chatNode' ? 'Chat' : 'Context'
+          const contextLabel = (sourceNode?.data as any)?.label || nodeType
 
           // Inject context updated message with instructions to disregard old context
           const updateMessage: Message = {
             id: `context-updated-${contextId}-${Date.now()}`,
             role: 'assistant',
-            content: `📎 **Context Updated: ${contextLabel}**\n\n**Previous context (disregard this):**\n\n---\n\n${oldText}\n\n---\n\n**New context (use this going forward):**\n\n---\n\n${newText}\n\n---\n\n*Please disregard the previous version and only use the new context above in all future responses.*`,
+            content: `📎 **${nodeType} Updated: ${contextLabel}**\n\n**Previous version (disregard this):**\n\n---\n\n${oldText}\n\n---\n\n**New version (use this going forward):**\n\n---\n\n${newText}\n\n---\n\n*Please disregard the previous version and only use the new information above in all future responses.*`,
           }
           setMessages((prev) => [...prev, updateMessage])
         }
@@ -370,7 +398,7 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
     // Update both state and ref
     connectedContextsRef.current = newContexts
     setConnectedContexts(newContexts)
-  }, [getEdges, getNode, id])
+  }, [edges, nodes, id])
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
@@ -599,7 +627,7 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
         )}
       </div>
 
-      {/* Active Contexts Indicator */}
+      {/* Active Inputs Indicator */}
       {connectedContexts.size > 0 && (
         <div className="nodrag bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200">
           <button
@@ -609,7 +637,7 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
             <div className="flex items-center gap-2">
               <span className="text-sm">📎</span>
               <span className="text-xs font-medium text-amber-700">
-                Active Context ({connectedContexts.size})
+                Active Inputs ({connectedContexts.size})
               </span>
             </div>
             {isContextExpanded ? (
@@ -622,15 +650,16 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
           {isContextExpanded && (
             <div className="px-4 pb-3 pt-1 space-y-2 animate-in slide-in-from-top-2 duration-200">
               {Array.from(connectedContexts.entries()).map(([contextId, contextText]) => {
-                const sourceNode = getNode(contextId)
-                const contextLabel = (sourceNode?.data as any)?.label || 'Context'
+                const sourceNode = nodes.find(node => node.id === contextId)
+                const nodeType = sourceNode?.type === 'chatNode' ? 'Chat' : 'Context'
+                const contextLabel = (sourceNode?.data as any)?.label || nodeType
                 return (
                   <div
                     key={contextId}
                     className="bg-white rounded-lg p-2 border border-amber-200"
                   >
                     <p className="text-xs font-medium text-gray-700 mb-1">
-                      {contextLabel}
+                      {nodeType}: {contextLabel}
                     </p>
                     <p className="text-xs text-gray-500 line-clamp-2">
                       {contextText || 'No content'}
