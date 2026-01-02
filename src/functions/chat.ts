@@ -233,4 +233,67 @@ export const sendChatMessage = createServerFn({ method: 'POST' })
         },
       }
     )
-  }) 
+  })
+
+// Schema for summarization request
+const summarizeSchema = z.object({
+  messages: z.array(z.object({
+    role: z.enum(['user', 'assistant', 'system']),
+    content: z.string(),
+  })),
+  type: z.enum(['summary', 'keypoints']).default('summary'),
+})
+
+export const summarizeConversation = createServerFn({ method: 'POST' })
+  .inputValidator(summarizeSchema)
+  .handler(async ({ data, context }) => {
+    console.log(`[OpenRouter] Summarizing conversation with ${data.messages.length} messages`)
+    console.log(`[OpenRouter] Summary type: ${data.type}`)
+
+    // Get API key from Cloudflare env
+    const apiKey = env.OPENROUTER_API_KEY
+
+    if (!apiKey || apiKey.trim() === '' || apiKey === 'your-new-api-key-here') {
+      throw new Error('Invalid API key - please set a valid OpenRouter API key in .dev.vars')
+    }
+
+    // Create OpenRouter client
+    const openRouter = new OpenRouter({
+      apiKey: apiKey.trim(),
+    })
+
+    // Format the conversation for summarization
+    const conversationText = data.messages
+      .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+      .join('\n\n')
+
+    // Create the prompt based on type
+    const systemPrompt = data.type === 'summary'
+      ? 'You are a conversation summarizer. Provide a concise summary of the following conversation, capturing the main topics discussed and key outcomes. Keep it brief but comprehensive.'
+      : 'You are a conversation analyzer. Extract and list the key points from the following conversation as a bulleted list. Focus on the most important information, decisions, and conclusions.'
+
+    const userPrompt = `${systemPrompt}\n\nConversation:\n${conversationText}\n\nProvide the ${data.type === 'summary' ? 'summary' : 'key points'}:`
+
+    console.log('[OpenRouter] Sending summarization request...')
+
+    try {
+      const response = await openRouter.chat.send({
+        model: 'anthropic/claude-haiku-4.5',
+        messages: [{ role: 'user', content: userPrompt }],
+        stream: false,
+        temperature: 0.3,
+      })
+
+      const summary = response.choices?.[0]?.message?.content || ''
+      console.log(`[OpenRouter] Summary generated (${summary.length} chars)`)
+
+      return {
+        success: true,
+        summary: summary,
+        type: data.type,
+      }
+    } catch (error) {
+      console.error('[OpenRouter] Error generating summary:', error)
+      throw error
+    }
+  })

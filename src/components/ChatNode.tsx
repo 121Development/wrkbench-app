@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import { Handle, Position, useReactFlow, NodeResizer, useEdges, useNodes } from '@xyflow/react'
 import { ArrowUp, X, Settings, ChevronDown, ChevronUp, Undo2, Redo2, Pencil, Check, Copy, Check as CheckCopy, Reply, Download, MoreHorizontal, Circle, Maximize2 } from 'lucide-react'
-import { sendChatMessage } from '../functions/chat'
+import { sendChatMessage, summarizeConversation } from '../functions/chat'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -151,6 +151,8 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
   const [appliedMessages, setAppliedMessages] = useState<Message[]>([])
   const [hasChildConnections, setHasChildConnections] = useState(false)
   const [autoApply, setAutoApply] = useState(false)
+  const [outputFormat, setOutputFormat] = useState<'transcript' | 'summary' | 'keypoints'>('transcript')
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
   const connectedContextsRef = useRef<Map<string, string>>(new Map())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -304,12 +306,43 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
   }, [edges, id])
 
   // Apply button handler - manually sync messages to node data
-  const handleApplyChanges = () => {
-    console.log(`[Chat ${id}] APPLYING ${messages.length} messages to node data`)
+  const handleApplyChanges = async () => {
+    console.log(`[Chat ${id}] APPLYING ${messages.length} messages to node data (format: ${outputFormat})`)
+
+    let formattedOutput = messages
+
+    // Generate summary or key points if needed
+    if (outputFormat !== 'transcript' && messages.length > 0) {
+      setIsGeneratingSummary(true)
+      try {
+        const result = await summarizeConversation({
+          data: {
+            messages: messages.map(m => ({ role: m.role, content: m.content })),
+            type: outputFormat === 'summary' ? 'summary' : 'keypoints',
+          },
+        })
+
+        console.log(`[Chat ${id}] Generated ${outputFormat}:`, result.summary)
+
+        // Store the formatted output as a special message type
+        formattedOutput = [{
+          id: `${outputFormat}-${Date.now()}`,
+          role: 'assistant' as const,
+          content: result.summary,
+        }]
+      } catch (error) {
+        console.error(`[Chat ${id}] Error generating ${outputFormat}:`, error)
+        // Fall back to transcript on error
+        formattedOutput = messages
+      } finally {
+        setIsGeneratingSummary(false)
+      }
+    }
+
     setNodes((nodes) =>
       nodes.map((node) =>
         node.id === id
-          ? { ...node, data: { ...node.data, messages: messages } }
+          ? { ...node, data: { ...node.data, messages: formattedOutput, outputFormat: outputFormat } }
           : node
       )
     )
@@ -653,7 +686,7 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
               <input
                 type="range"
                 min="0"
-                max="1"
+                max="2"
                 step="0.01"
                 value={temperature}
                 onChange={(e) => setTemperature(parseFloat(e.target.value))}
@@ -661,7 +694,7 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
               />
               <div className="flex justify-between text-xs text-gray-500 mt-1">
                 <span>0 (Precise)</span>
-                <span>1 (Creative)</span>
+                <span>2 (Very Creative)</span>
               </div>
             </div>
           </div>
@@ -924,6 +957,45 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
         {/* Apply Changes Button and Status */}
         {hasChildConnections && (
           <div className="mt-3 space-y-2">
+            {/* Output format selector */}
+            <div className="nodrag">
+              <label className="text-xs font-medium text-gray-700 mb-1 block">
+                Output Format:
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setOutputFormat('transcript')}
+                  className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all ${
+                    outputFormat === 'transcript'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Transcript
+                </button>
+                <button
+                  onClick={() => setOutputFormat('summary')}
+                  className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all ${
+                    outputFormat === 'summary'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Summary
+                </button>
+                <button
+                  onClick={() => setOutputFormat('keypoints')}
+                  className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all ${
+                    outputFormat === 'keypoints'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Key Points
+                </button>
+              </div>
+            </div>
+
             {/* Auto-apply toggle */}
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 cursor-pointer">
@@ -941,20 +1013,26 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
             {hasUnappliedChanges ? (
               <div className="flex items-center justify-between">
                 <p className="text-xs text-amber-600">
-                  Unapplied changes - {autoApply ? 'will apply after next response' : 'click Apply to update connected nodes'}
+                  {isGeneratingSummary
+                    ? `Generating ${outputFormat}...`
+                    : `Unapplied changes - ${autoApply ? `will send ${outputFormat} after next response` : `click Apply to send ${outputFormat}`}`
+                  }
                 </p>
                 {!autoApply && (
                   <button
                     onClick={handleApplyChanges}
-                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition-colors"
+                    disabled={isGeneratingSummary}
+                    className={`px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition-colors ${
+                      isGeneratingSummary ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
-                    Apply Changes
+                    {isGeneratingSummary ? 'Generating...' : 'Apply Changes'}
                   </button>
                 )}
               </div>
             ) : (
               <p className="text-xs text-gray-400 text-right">
-                All changes applied
+                All changes applied ({outputFormat} format)
               </p>
             )}
           </div>

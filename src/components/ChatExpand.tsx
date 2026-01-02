@@ -212,7 +212,7 @@ export default function ChatExpand({
               <input
                 type="range"
                 min="0"
-                max="1"
+                max="2"
                 step="0.01"
                 value={temperature}
                 onChange={(e) => onTemperatureChange(parseFloat(e.target.value))}
@@ -220,7 +220,7 @@ export default function ChatExpand({
               />
               <div className="flex justify-between text-xs text-gray-500 mt-1">
                 <span>0 (Precise)</span>
-                <span>1 (Creative)</span>
+                <span>2 (Very Creative)</span>
               </div>
             </div>
           </div>
