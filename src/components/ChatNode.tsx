@@ -1,11 +1,14 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useContext } from 'react'
+import { createPortal } from 'react-dom'
 import { Handle, Position, useReactFlow, NodeResizer } from '@xyflow/react'
-import { ArrowUp, X, Settings, ChevronDown, ChevronUp, Undo2, Redo2, Pencil, Check, Copy, Check as CheckCopy, Reply, Download, MoreHorizontal } from 'lucide-react'
+import { ArrowUp, X, Settings, ChevronDown, ChevronUp, Undo2, Redo2, Pencil, Check, Copy, Check as CheckCopy, Reply, Download, MoreHorizontal, Circle, Maximize2 } from 'lucide-react'
 import { sendChatMessage } from '../functions/chat'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { LogContext } from '../routes/index'
+import ChatExpand from './ChatExpand'
 
 interface ChatNodeProps {
   id: string
@@ -144,9 +147,11 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   const [connectedContexts, setConnectedContexts] = useState<Map<string, string>>(new Map())
   const [isContextExpanded, setIsContextExpanded] = useState(false)
+  const [isExpandOpen, setIsExpandOpen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const { setNodes, getEdges, getNode } = useReactFlow()
+  const { addLog } = useContext(LogContext)
 
   const handleClose = () => {
     setNodes((nodes) => nodes.filter((node) => node.id !== id))
@@ -253,7 +258,10 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
       while (true) {
         const { done, value } = await reader.read()
 
-        if (done) break
+        if (done) {
+          addLog('Message Received', `Chat Node ${id}: AI response completed (${accumulatedContent.length} chars)`)
+          break
+        }
 
         const chunk = decoder.decode(value, { stream: true })
         accumulatedContent += chunk
@@ -269,6 +277,7 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
       }
     } catch (error) {
       console.error('Error sending message:', error)
+      addLog('Error', `Chat Node ${id}: Failed to send message - ${error}`)
       // Remove the placeholder message on error
       setMessages((prev) => prev.filter((msg) => msg.id !== assistantMessageId))
     } finally {
@@ -346,11 +355,11 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
           const sourceNode = getNode(contextId)
           const contextLabel = (sourceNode?.data as any)?.label || 'Context'
 
-          // Inject context updated message
+          // Inject context updated message with instructions to disregard old context
           const updateMessage: Message = {
             id: `context-updated-${contextId}-${Date.now()}`,
             role: 'assistant',
-            content: `📎 **Context Updated: ${contextLabel}**\n\n${newText}`,
+            content: `📎 **Context Updated: ${contextLabel}**\n\n**Previous context (disregard this):**\n\n---\n\n${oldText}\n\n---\n\n**New context (use this going forward):**\n\n---\n\n${newText}\n\n---\n\n*Please disregard the previous version and only use the new context above in all future responses.*`,
           }
           setMessages((prev) => [...prev, updateMessage])
         }
@@ -373,6 +382,8 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
         role: replyingTo.role,
       } : undefined,
     }
+
+    addLog('Message Sent', `Chat Node ${id}: "${input.trim().substring(0, 50)}${input.trim().length > 50 ? '...' : ''}"`)
 
     setMessages((prev) => [...prev, userMessage])
     setDeletedMessages([]) // Clear redo history when new message is sent
@@ -418,7 +429,10 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
       while (true) {
         const { done, value } = await reader.read()
 
-        if (done) break
+        if (done) {
+          addLog('Message Received', `Chat Node ${id}: AI response completed (${accumulatedContent.length} chars)`)
+          break
+        }
 
         const chunk = decoder.decode(value, { stream: true })
         accumulatedContent += chunk
@@ -434,6 +448,7 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
       }
     } catch (error) {
       console.error('Error sending message:', error)
+      addLog('Error', `Chat Node ${id}: Failed to send message - ${error}`)
       // Remove the placeholder message on error
       setMessages((prev) => prev.filter((msg) => msg.id !== assistantMessageId))
     } finally {
@@ -454,11 +469,12 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 min-w-[500px] w-full h-full flex flex-col">
+    <>
+    <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full h-full flex flex-col">
       <NodeResizer
         isVisible={selected}
-        minWidth={400}
-        minHeight={400}
+        minWidth={500}
+        minHeight={500}
         handleStyle={{
           width: '12px',
           height: '12px',
@@ -483,7 +499,29 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
         }
       `}</style>
 
-      <Handle type="target" position={Position.Top} className="w-3 h-3" />
+      <Handle
+        type="target"
+        position={Position.Top}
+        style={{
+          background: 'none',
+          border: 'none',
+          width: '1.5em',
+          height: '1.5em',
+        }}
+      >
+        <Circle
+          size={24}
+          fill="white"
+          stroke="#9333ea"
+          strokeWidth={2}
+          style={{
+            pointerEvents: 'none',
+            left: 0,
+            top: 0,
+            position: 'absolute',
+          }}
+        />
+      </Handle>
 
       {/* Settings Card */}
       <div className="nodrag bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-purple-200">
@@ -607,31 +645,13 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
         <h3 className="text-lg font-semibold text-gray-800">
           {data.label || 'AI Chat'}
         </h3>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleUndo}
-            disabled={messages.length === 0}
-            className="p-1 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            aria-label="Undo"
-          >
-            <Undo2 size={18} className="text-gray-500 hover:text-gray-700" />
-          </button>
-          <button
-            onClick={handleRedo}
-            disabled={deletedMessages.length === 0}
-            className="p-1 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            aria-label="Redo"
-          >
-            <Redo2 size={18} className="text-gray-500 hover:text-gray-700" />
-          </button>
-          <button
-            onClick={handleClose}
-            className="p-1 hover:bg-gray-100 rounded-md transition-colors"
-            aria-label="Close"
-          >
-            <X size={18} className="text-gray-500 hover:text-gray-700" />
-          </button>
-        </div>
+        <button
+          onClick={handleClose}
+          className="p-1 hover:bg-gray-100 rounded-md transition-colors"
+          aria-label="Close"
+        >
+          <X size={18} className="text-gray-500 hover:text-gray-700" />
+        </button>
       </div>
 
       {/* Chat Messages Area */}
@@ -825,12 +845,91 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
             </button>
           </div>
         </form>
-        <p className="text-xs text-gray-400 mt-2 text-center">
-          Press Enter to send, Shift+Enter for new line
-        </p>
+
+        {/* Action Buttons: Undo, Redo, Expand */}
+        <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-200">
+          <button
+            onClick={handleUndo}
+            disabled={messages.length === 0}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            aria-label="Undo"
+            title="Undo last message"
+          >
+            <Undo2 size={16} className="text-gray-600" />
+          </button>
+          <button
+            onClick={handleRedo}
+            disabled={deletedMessages.length === 0}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            aria-label="Redo"
+            title="Redo message"
+          >
+            <Redo2 size={16} className="text-gray-600" />
+          </button>
+          <div className="w-px h-6 bg-gray-300 mx-1"></div>
+          <button
+            onClick={() => setIsExpandOpen(true)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label="Expand view"
+            title="Open expanded view"
+          >
+            <Maximize2 size={16} className="text-gray-600" />
+          </button>
+        </div>
       </div>
 
-      <Handle type="source" position={Position.Bottom} className="w-3 h-3" />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        style={{
+          background: 'none',
+          border: 'none',
+          width: '1.5em',
+          height: '1.5em',
+        }}
+      >
+        <Circle
+          size={24}
+          fill="white"
+          stroke="#9333ea"
+          strokeWidth={2}
+          style={{
+            pointerEvents: 'none',
+            left: 0,
+            top: 0,
+            position: 'absolute',
+          }}
+        />
+      </Handle>
+
     </div>
+    {/* Expanded Chat View - Rendered outside React Flow using Portal */}
+    {isExpandOpen && createPortal(
+      <ChatExpand
+        messages={messages}
+        input={input}
+        isLoading={isLoading}
+        replyingTo={replyingTo}
+        copiedCodeBlock={copiedCodeBlock}
+        chatLabel={data.label}
+        selectedModel={selectedModel}
+        temperature={temperature}
+        isSettingsExpanded={isSettingsExpanded}
+        deletedMessages={deletedMessages}
+        onClose={() => setIsExpandOpen(false)}
+        onInputChange={setInput}
+        onSend={handleSend}
+        onKeyDown={handleKeyDown}
+        onCancelReply={handleCancelReply}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        onModelChange={setSelectedModel}
+        onTemperatureChange={setTemperature}
+        onToggleSettings={() => setIsSettingsExpanded(!isSettingsExpanded)}
+        setCopiedCodeBlock={setCopiedCodeBlock}
+      />,
+      document.body
+    )}
+    </>
   )
 }

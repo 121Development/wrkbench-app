@@ -3,9 +3,11 @@ import { createServerFn } from '@tanstack/react-start'
 import { OpenRouter } from '@openrouter/sdk'
 import { z } from 'zod'
 import { ProviderPreferences } from '@openrouter/sdk/models'
+import { env } from "cloudflare:workers";
+
 
 const openRouter = new OpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
+  apiKey: env.OPENROUTER_API_KEY,
 })
 
 const messageSchema = z.object({
