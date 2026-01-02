@@ -187,12 +187,16 @@ export default function ContextNode({ id, data }: ContextNodeProps) {
           value={text}
           onChange={(e) => handleTextChange(e.target.value)}
           placeholder="Enter context information..."
-          className="nodrag w-full h-[200px] resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent placeholder:text-gray-400"
+          className="nodrag nowheel w-full h-[200px] resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent placeholder:text-gray-400"
+          onWheel={(e) => e.stopPropagation()}
         />
 
         {/* Markdown Preview */}
         {savedText && (
-          <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200 max-h-[150px] overflow-y-auto">
+          <div
+            className="nodrag nowheel mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200 max-h-[150px] overflow-y-auto"
+            onWheel={(e) => e.stopPropagation()}
+          >
             <p className="text-xs font-medium text-gray-600 mb-2">Preview:</p>
             <div className="text-xs leading-relaxed text-gray-700 prose prose-sm max-w-none prose-headings:mt-3 prose-headings:mb-2 prose-p:my-2 prose-pre:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 select-text">
               <ReactMarkdown

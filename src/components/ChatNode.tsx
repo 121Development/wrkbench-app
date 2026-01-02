@@ -660,11 +660,12 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
       {/* Chat Messages Area */}
       <div
         ref={scrollContainerRef}
-        className="nodrag chat-scroll-container flex-1 p-6 overflow-y-auto bg-gray-50 scroll-smooth"
+        className="nodrag nowheel chat-scroll-container flex-1 p-6 overflow-y-auto bg-gray-50 scroll-smooth"
         style={{
           scrollbarWidth: 'thin',
           scrollbarColor: '#cbd5e1 #f1f5f9'
         }}
+        onWheel={(e) => e.stopPropagation()}
       >
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
@@ -832,8 +833,9 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
               onKeyDown={handleKeyDown}
               placeholder="Message..."
               disabled={isLoading}
-              className="nodrag flex-1 resize-none rounded-xl border border-gray-300 px-4 py-3 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent min-h-[52px] max-h-[200px] placeholder:text-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="nodrag nowheel flex-1 resize-none rounded-xl border border-gray-300 px-4 py-3 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent min-h-[52px] max-h-[200px] placeholder:text-gray-400 disabled:bg-gray-100 disabled:cursor-not-allowed"
               rows={1}
+              onWheel={(e) => e.stopPropagation()}
             />
             <button
               type="submit"
