@@ -148,6 +148,9 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
   const [connectedContexts, setConnectedContexts] = useState<Map<string, string>>(new Map())
   const [isContextExpanded, setIsContextExpanded] = useState(false)
   const [isExpandOpen, setIsExpandOpen] = useState(false)
+  const [appliedMessages, setAppliedMessages] = useState<Message[]>([])
+  const [hasChildConnections, setHasChildConnections] = useState(false)
+  const [autoApply, setAutoApply] = useState(false)
   const connectedContextsRef = useRef<Map<string, string>>(new Map())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -293,8 +296,16 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Sync messages to node data so other nodes can access them
+  // Check for child connections (nodes connected to this chat's output)
   useEffect(() => {
+    const childEdges = edges.filter((edge) => edge.source === id)
+    setHasChildConnections(childEdges.length > 0)
+    console.log(`[Chat ${id}] Has ${childEdges.length} child connections`)
+  }, [edges, id])
+
+  // Apply button handler - manually sync messages to node data
+  const handleApplyChanges = () => {
+    console.log(`[Chat ${id}] APPLYING ${messages.length} messages to node data`)
     setNodes((nodes) =>
       nodes.map((node) =>
         node.id === id
@@ -302,32 +313,56 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
           : node
       )
     )
-  }, [messages, id, setNodes])
+    setAppliedMessages(messages)
+  }
+
+  // Check if there are unapplied changes
+  const hasUnappliedChanges = JSON.stringify(messages) !== JSON.stringify(appliedMessages)
+
+  // Auto-apply when loading completes (AI response finished)
+  useEffect(() => {
+    // Only auto-apply when:
+    // 1. Loading just finished (isLoading is false)
+    // 2. Auto-apply is enabled
+    // 3. There are child connections
+    // 4. There are unapplied changes
+    if (!isLoading && autoApply && hasChildConnections && hasUnappliedChanges) {
+      console.log(`[Chat ${id}] Auto-applying after loading completed`)
+      handleApplyChanges()
+    }
+  }, [isLoading]) // Only trigger when isLoading changes
 
   // Monitor context and chat node connections
   useEffect(() => {
+    console.log(`[Chat ${id}] Monitoring effect triggered`)
     const inputEdges = edges.filter(
       (edge) => edge.target === id && edge.source.startsWith('node-')
     )
+    console.log(`[Chat ${id}] Found ${inputEdges.length} input edges`)
 
     const newContexts = new Map<string, string>()
 
     inputEdges.forEach((edge) => {
       const sourceNode = nodes.find(node => node.id === edge.source)
+      console.log(`[Chat ${id}] Source node:`, sourceNode?.id, sourceNode?.type)
       if (sourceNode) {
         if (sourceNode.type === 'contextNode') {
           // Handle context nodes
           const contextText = (sourceNode.data as any).text || ''
+          console.log(`[Chat ${id}] Context node text length:`, contextText.length)
           newContexts.set(edge.source, contextText)
         } else if (sourceNode.type === 'chatNode') {
           // Handle chat nodes - format messages as conversation history
           const sourceMessages = (sourceNode.data as any).messages || []
+          console.log(`[Chat ${id}] Chat node has ${sourceMessages.length} messages`)
+          console.log(`[Chat ${id}] Source messages:`, sourceMessages)
           const formattedConversation = sourceMessages
             .map((msg: Message) => {
               const role = msg.role === 'user' ? 'User' : 'Assistant'
               return `**${role}:** ${msg.content}`
             })
             .join('\n\n')
+          console.log(`[Chat ${id}] Formatted conversation length:`, formattedConversation.length)
           newContexts.set(edge.source, formattedConversation)
         }
       }
@@ -336,14 +371,20 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
     // Detect changes and inject context messages
     const oldContextIds = new Set(connectedContextsRef.current.keys())
     const newContextIds = new Set(newContexts.keys())
+    console.log(`[Chat ${id}] Old contexts:`, Array.from(oldContextIds))
+    console.log(`[Chat ${id}] New contexts:`, Array.from(newContextIds))
 
     // New contexts added
     newContextIds.forEach((contextId) => {
       if (!oldContextIds.has(contextId)) {
+        console.log(`[Chat ${id}] NEW CONTEXT DETECTED:`, contextId)
         const contextText = newContexts.get(contextId) || ''
         const sourceNode = nodes.find(node => node.id === contextId)
         const nodeType = sourceNode?.type === 'chatNode' ? 'Chat' : 'Context'
         const contextLabel = (sourceNode?.data as any)?.label || nodeType
+
+        console.log(`[Chat ${id}] Injecting connection message for ${nodeType}: ${contextLabel}`)
+        console.log(`[Chat ${id}] Context text length:`, contextText.length)
 
         // Inject context added message
         const contextMessage: Message = {
@@ -879,6 +920,45 @@ export default function ChatNode({ id, data, selected }: ChatNodeProps) {
             </button>
           </div>
         </form>
+
+        {/* Apply Changes Button and Status */}
+        {hasChildConnections && (
+          <div className="mt-3 space-y-2">
+            {/* Auto-apply toggle */}
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoApply}
+                  onChange={(e) => setAutoApply(e.target.checked)}
+                  className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 focus:ring-2"
+                />
+                <span className="text-xs text-gray-600">Auto-apply after AI response</span>
+              </label>
+            </div>
+
+            {/* Apply button and status */}
+            {hasUnappliedChanges ? (
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-amber-600">
+                  Unapplied changes - {autoApply ? 'will apply after next response' : 'click Apply to update connected nodes'}
+                </p>
+                {!autoApply && (
+                  <button
+                    onClick={handleApplyChanges}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition-colors"
+                  >
+                    Apply Changes
+                  </button>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 text-right">
+                All changes applied
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Action Buttons: Undo, Redo, Expand */}
         <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-200">
